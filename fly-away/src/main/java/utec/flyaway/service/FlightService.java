@@ -7,6 +7,9 @@ import utec.flyaway.entity.Flight;
 import utec.flyaway.repository.FlightRepository;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -50,8 +53,8 @@ public class FlightService {
 
     public FlightSearchResponseDTO searchFlights(String flightNumber, String airlineName, 
                                                   String estDepartureTimeFrom, String estDepartureTimeTo) {
-        Instant from = estDepartureTimeFrom != null ? Instant.parse(estDepartureTimeFrom) : null;
-        Instant to = estDepartureTimeTo != null ? Instant.parse(estDepartureTimeTo) : null;
+        Instant from = parseDate(estDepartureTimeFrom);
+        Instant to = parseDate(estDepartureTimeTo);
 
         List<Flight> flights;
 
@@ -115,31 +118,51 @@ public class FlightService {
 
     public Flight getFlightById(UUID id) {
         return flightRepository.findById(id)
-            .orElseThrow(() -> new RuntimeException("Flight not found"));
+            .orElseThrow(() -> new RuntimeException("Vuelo no encontrado"));
+    }
+
+    private Instant parseDate(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        try {
+            return Instant.parse(trimmed);
+        } catch (Exception e1) {
+            try {
+                return OffsetDateTime.parse(trimmed).toInstant();
+            } catch (Exception e2) {
+                try {
+                    return LocalDate.parse(trimmed).atStartOfDay(ZoneOffset.UTC).toInstant();
+                } catch (Exception e3) {
+                    throw new IllegalArgumentException("Fecha de salida inválida: " + value);
+                }
+            }
+        }
     }
 
     private void validateFlight(NewFlightRequestDTO dto) {
         if (dto.getAirlineName() == null || dto.getFlightNumber() == null || 
             dto.getEstDepartureTime() == null || dto.getEstArrivalTime() == null || 
             dto.getAvailableSeats() == null) {
-            throw new IllegalArgumentException("All fields are mandatory");
+            throw new IllegalArgumentException("Todos los campos son obligatorios");
         }
 
-        if (!dto.getFlightNumber().matches("^[A-Z]{2,3}[0-9]{3}$")) {
-            throw new IllegalArgumentException("Invalid flight number format");
+        if (!dto.getFlightNumber().matches("^[A-Z0-9]{1,6}$")) {
+            throw new IllegalArgumentException("Formato de número de vuelo inválido (solo A-Z y 0-9, máximo 6 caracteres)");
         }
 
         if (dto.getAvailableSeats() <= 0) {
-            throw new IllegalArgumentException("Available seats must be greater than 0");
+            throw new IllegalArgumentException("Los asientos disponibles deben ser mayores a 0");
         }
 
         if (dto.getEstDepartureTime().isAfter(dto.getEstArrivalTime()) || 
             dto.getEstDepartureTime().equals(dto.getEstArrivalTime())) {
-            throw new IllegalArgumentException("Departure time must be before arrival time");
+            throw new IllegalArgumentException("La hora de salida debe ser anterior a la hora de llegada");
         }
 
         if (flightRepository.findByFlightNumber(dto.getFlightNumber()).isPresent()) {
-            throw new IllegalArgumentException("Flight number already exists");
+            throw new IllegalArgumentException("El número de vuelo ya existe");
         }
     }
 }

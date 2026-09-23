@@ -1,0 +1,29 @@
+# Maven & Java
+target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+bin/
+out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# Runtime artifacts generados por la app (emails de confirmación)
+flight_booking_email_*.txt

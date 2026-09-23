@@ -15,7 +15,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Void> handleRuntime(RuntimeException e) {
-        if (e.getMessage() != null && e.getMessage().contains("not found")) {
+        if (e.getMessage() != null && e.getMessage().contains("no encontrad")) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         }
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();

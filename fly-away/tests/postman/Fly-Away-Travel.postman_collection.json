@@ -1,0 +1,1126 @@
+{
+  "info": {
+    "name": "Fly Away Travel — Week 07 Lab Tests",
+    "_postman_id": "f1y4w4y-t3st-w07-0001-000000000000",
+    "description": "Colección de pruebas automáticas para el Lab 07 (CS2031-DBP). Verifica que el API de reservas de vuelos cumple con TODOS los constraints y recompensas descritos en el README del repositorio cs2031-2026-2-week07-lab.\n\nCómo usarla:\n1. Levanta tu API (por defecto se asume http://localhost:8080 — ajusta la variable `baseUrl` si usas otro puerto).\n2. Importa esta colección y el environment `Fly-Away-Travel.postman_environment.json` en Postman.\n3. Corre la colección completa con el Collection Runner (o Newman) EN ORDEN — varios requests dependen de datos creados por requests anteriores (usuario registrado, token JWT, vuelo creado, reserva creada).\n4. Revisa la pestaña 'Test Results' de cada request: cada assertion indica qué constraint del README se está validando y por qué falló.\n\nNota sobre 'Email de Confirmación' (misión 6): no se puede verificar por HTTP porque es un archivo en el filesystem del servidor. Esa carpeta de la colección solo deja instrucciones de verificación manual.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "jwtToken", "value": "" },
+    { "key": "userEmail", "value": "" },
+    { "key": "userPassword", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "flightIdValid", "value": "" },
+    { "key": "flightIdSoldOut", "value": "" },
+    { "key": "flightIdPast", "value": "" },
+    { "key": "flightIdOverlapA", "value": "" },
+    { "key": "flightIdOverlapB", "value": "" },
+    { "key": "bookingId", "value": "" },
+    { "key": "uniqueSuffix", "value": "" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('uniqueSuffix')) {",
+          "    pm.collectionVariables.set('uniqueSuffix', Date.now().toString());",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Setup",
+      "item": [
+        {
+          "name": "0.1 Registrar usuario de pruebas",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = pm.collectionVariables.get('uniqueSuffix');",
+                  "pm.collectionVariables.set('userEmail', `lab07.${suffix}@utec.edu.pe`);",
+                  "pm.collectionVariables.set('userPassword', 'Password123');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[Setup] Registro exitoso responde 200/201', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "pm.test('[Setup] Guardamos el id del usuario para pruebas posteriores', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('id');",
+                  "    pm.collectionVariables.set('userId', body.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/users/register", "host": ["{{baseUrl}}"], "path": ["users", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Torres\",\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "0.2 Login para obtener JWT",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[Setup] Login responde 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('[Setup] Guardamos el token JWT para requests protegidos', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('token');",
+                  "    pm.expect(body.token).to.be.a('string').and.not.empty;",
+                  "    pm.collectionVariables.set('jwtToken', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Crear Vuelo (POST /flights/create)",
+      "item": [
+        {
+          "name": "1.1 Happy path — crea vuelo válido",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = pm.collectionVariables.get('uniqueSuffix').slice(-4);",
+                  "pm.collectionVariables.set('flightNumberValid', `AA${suffix}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.1] Vuelo válido responde 200/201 (sin protección — no requiere JWT)', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "pm.test('[1.1] Guardamos el id del vuelo para reservas posteriores', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('id');",
+                  "    pm.collectionVariables.set('flightIdValid', body.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/flights/create", "host": ["{{baseUrl}}"], "path": ["flights", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightNumber\": \"{{flightNumberValid}}\",\n  \"airline\": \"Fly Away Travel\",\n  \"departureTime\": \"2027-06-01T10:00:00\",\n  \"arrivalTime\": \"2027-06-01T14:00:00\",\n  \"availableSeats\": 50\n}"
+            }
+          }
+        },
+        {
+          "name": "1.2 Rechaza número de vuelo con formato inválido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.2] Número de vuelo inválido (minúsculas/símbolos o >6 chars) responde 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/flights/create", "host": ["{{baseUrl}}"], "path": ["flights", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightNumber\": \"aa-toolong-984\",\n  \"airline\": \"Fly Away Travel\",\n  \"departureTime\": \"2027-06-01T10:00:00\",\n  \"arrivalTime\": \"2027-06-01T14:00:00\",\n  \"availableSeats\": 50\n}"
+            }
+          }
+        },
+        {
+          "name": "1.3 Rechaza hora de salida >= hora de llegada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.3] Salida posterior o igual a llegada responde 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/flights/create", "host": ["{{baseUrl}}"], "path": ["flights", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightNumber\": \"BB999\",\n  \"airline\": \"Fly Away Travel\",\n  \"departureTime\": \"2027-06-01T14:00:00\",\n  \"arrivalTime\": \"2027-06-01T10:00:00\",\n  \"availableSeats\": 50\n}"
+            }
+          }
+        },
+        {
+          "name": "1.4 Rechaza asientos disponibles <= 0",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.4] Asientos disponibles = 0 responde 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/flights/create", "host": ["{{baseUrl}}"], "path": ["flights", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightNumber\": \"CC888\",\n  \"airline\": \"Fly Away Travel\",\n  \"departureTime\": \"2027-06-01T10:00:00\",\n  \"arrivalTime\": \"2027-06-01T14:00:00\",\n  \"availableSeats\": 0\n}"
+            }
+          }
+        },
+        {
+          "name": "1.5 Rechaza campos faltantes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.5] Body incompleto responde 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/flights/create", "host": ["{{baseUrl}}"], "path": ["flights", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"airline\": \"Fly Away Travel\"\n}"
+            }
+          }
+        },
+        {
+          "name": "1.6 Rechaza número de vuelo duplicado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[1.6] Número de vuelo repetido responde 400/409', function () {",
+                  "    pm.expect([400, 409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/flights/create", "host": ["{{baseUrl}}"], "path": ["flights", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightNumber\": \"{{flightNumberValid}}\",\n  \"airline\": \"Fly Away Travel\",\n  \"departureTime\": \"2027-07-01T10:00:00\",\n  \"arrivalTime\": \"2027-07-01T14:00:00\",\n  \"availableSeats\": 20\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Registro de Usuarios (POST /users/register)",
+      "item": [
+        {
+          "name": "2.1 Rechaza email inválido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[2.1] Email con formato inválido responde 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/users/register", "host": ["{{baseUrl}}"], "path": ["users", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Torres\",\n  \"email\": \"no-es-un-email\",\n  \"password\": \"Password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "2.2 Rechaza nombre/apellido sin mayúscula",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[2.2] Nombre/apellido todo en minúsculas responde 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/users/register", "host": ["{{baseUrl}}"], "path": ["users", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"ana\",\n  \"lastName\": \"torres\",\n  \"email\": \"lowercase.{{uniqueSuffix}}@utec.edu.pe\",\n  \"password\": \"Password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "2.3 Rechaza contraseña corta o sin número",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[2.3] Password < 8 chars o sin dígito responde 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/users/register", "host": ["{{baseUrl}}"], "path": ["users", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Torres\",\n  \"email\": \"weakpass.{{uniqueSuffix}}@utec.edu.pe\",\n  \"password\": \"short\"\n}"
+            }
+          }
+        },
+        {
+          "name": "2.4 Respuesta solo incluye el id (usa DTOs)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('dtoCheckEmail', `dtocheck.${pm.collectionVariables.get('uniqueSuffix')}@utec.edu.pe`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[2.4] Registro válido responde 200/201', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "pm.test('[2.4] La respuesta SOLO incluye el id (no expone password ni otros campos crudos de la entidad)', function () {",
+                  "    const body = pm.response.json();",
+                  "    const keys = Object.keys(body);",
+                  "    pm.expect(keys).to.include('id');",
+                  "    pm.expect(body).to.not.have.property('password');",
+                  "    pm.expect(keys.length, `La respuesta trae más campos de los esperados: ${JSON.stringify(body)}`).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/users/register", "host": ["{{baseUrl}}"], "path": ["users", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Dto\",\n  \"lastName\": \"Check\",\n  \"email\": \"{{dtoCheckEmail}}\",\n  \"password\": \"Password123\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Autenticación (POST /auth/login)",
+      "item": [
+        {
+          "name": "3.1 Rechaza campos faltantes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[3.1] Login sin password responde 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "3.2 Rechaza email desconocido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[3.2] Email que no existe responde 400/401/404 (no 200 ni 500)', function () {",
+                  "    pm.expect([400, 401, 404]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"no-existe.{{uniqueSuffix}}@utec.edu.pe\",\n  \"password\": \"Password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "3.3 Rechaza contraseña incorrecta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[3.3] Password incorrecto responde 400/401 (no 200 ni 500)', function () {",
+                  "    pm.expect([400, 401]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"WrongPassword999\"\n}"
+            }
+          }
+        },
+        {
+          "name": "3.4 Login correcto retorna { token }",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[3.4] Login correcto responde 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('[3.4] La respuesta tiene EXACTAMENTE el formato { token: \"<jwt>\" }', function () {",
+                  "    const body = pm.response.json();",
+                  "    const keys = Object.keys(body);",
+                  "    pm.expect(keys, `La respuesta trae claves distintas a 'token': ${JSON.stringify(body)}`).to.eql(['token']);",
+                  "    pm.expect(body.token).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.token.split('.').length, 'El token no parece un JWT válido (header.payload.signature)').to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Búsqueda de Vuelos (GET /flights/search)",
+      "item": [
+        {
+          "name": "4.1 Rechaza acceso sin token (endpoint protegido)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[4.1] Sin Authorization header responde 401/403 (endpoint protegido)', function () {",
+                  "    pm.expect([401, 403]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/flights/search", "host": ["{{baseUrl}}"], "path": ["flights", "search"] }
+          }
+        },
+        {
+          "name": "4.2 Búsqueda por número de vuelo parcial",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[4.2] Búsqueda parcial por número de vuelo responde 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('[4.2] Devuelve el vuelo creado en la misión 1 dentro de los resultados', function () {",
+                  "    const body = pm.response.json();",
+                  "    const list = Array.isArray(body) ? body : body.content;",
+                  "    pm.expect(list, 'La respuesta debería ser una lista (o {content: []} si es paginada)').to.be.an('array');",
+                  "    const found = list.some(f => f.flightNumber === pm.collectionVariables.get('flightNumberValid') || f.id === pm.collectionVariables.get('flightIdValid'));",
+                  "    pm.expect(found, 'No se encontró el vuelo esperado en los resultados de búsqueda').to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/flights/search?flightNumber={{flightNumberValid}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["flights", "search"],
+              "query": [{ "key": "flightNumber", "value": "{{flightNumberValid}}" }]
+            }
+          }
+        },
+        {
+          "name": "4.3 Búsqueda por aerolínea parcial",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[4.3] Búsqueda parcial por aerolínea responde 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/flights/search?airline=Fly",
+              "host": ["{{baseUrl}}"],
+              "path": ["flights", "search"],
+              "query": [{ "key": "airline", "value": "Fly" }]
+            }
+          }
+        },
+        {
+          "name": "4.4 Búsqueda por rango de fechas de salida",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[4.4] Búsqueda por rango de fechas responde 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/flights/search?departureFrom=2027-01-01T00:00:00&departureTo=2027-12-31T23:59:59",
+              "host": ["{{baseUrl}}"],
+              "path": ["flights", "search"],
+              "query": [
+                { "key": "departureFrom", "value": "2027-01-01T00:00:00" },
+                { "key": "departureTo", "value": "2027-12-31T23:59:59" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Reservar Vuelo (POST /flights/book)",
+      "item": [
+        {
+          "name": "5.1 Rechaza acceso sin token (endpoint protegido)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.1] Sin Authorization header responde 401/403', function () {",
+                  "    pm.expect([401, 403]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/flights/book", "host": ["{{baseUrl}}"], "path": ["flights", "book"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightId\": \"{{flightIdValid}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "5.2 Happy path — reserva un vuelo válido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.2] Reserva válida responde 200/201', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "pm.test('[5.2] La respuesta auto-calcula customerId, nombres y fecha de reserva (no se piden como input)', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('id');",
+                  "    pm.collectionVariables.set('bookingId', body.id);",
+                  "    const bodyStr = JSON.stringify(body).toLowerCase();",
+                  "    pm.expect(bodyStr).to.satisfy(s => s.includes('customer') || s.includes('user'), 'La respuesta debería incluir referencia al cliente que reservó');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/flights/book", "host": ["{{baseUrl}}"], "path": ["flights", "book"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightId\": \"{{flightIdValid}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "5.3 GET /flight/book/{id} devuelve la reserva creada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.3] Consultar reserva por id responde 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('[5.3] La reserva devuelta corresponde al id solicitado', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(String(body.id)).to.eql(String(pm.collectionVariables.get('bookingId')));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwtToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/flight/book/{{bookingId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["flight", "book", "{{bookingId}}"]
+            }
+          }
+        },
+        {
+          "name": "5.4 Setup — crear vuelo con 1 asiento (para probar sobreventa)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = pm.collectionVariables.get('uniqueSuffix').slice(-4);",
+                  "pm.collectionVariables.set('flightNumberSoldOut', `SO${suffix}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.4 setup] Vuelo con 1 asiento creado', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('flightIdSoldOut', body.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/flights/create", "host": ["{{baseUrl}}"], "path": ["flights", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightNumber\": \"{{flightNumberSoldOut}}\",\n  \"airline\": \"Fly Away Travel\",\n  \"departureTime\": \"2027-08-01T10:00:00\",\n  \"arrivalTime\": \"2027-08-01T14:00:00\",\n  \"availableSeats\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "5.5 Setup — segundo usuario reserva el único asiento",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = pm.collectionVariables.get('uniqueSuffix');",
+                  "pm.collectionVariables.set('userEmail2', `lab07b.${suffix}@utec.edu.pe`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.5 setup] Segundo usuario y login OK', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/users/register", "host": ["{{baseUrl}}"], "path": ["users", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Beto\",\n  \"lastName\": \"Rios\",\n  \"email\": \"{{userEmail2}}\",\n  \"password\": \"Password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "5.6 Setup — login segundo usuario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.6 setup] Login segundo usuario OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.collectionVariables.set('jwtToken2', pm.response.json().token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail2}}\",\n  \"password\": \"Password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "5.7 Setup — segundo usuario ocupa el único asiento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.7 setup] Reserva del único asiento disponible OK', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{jwtToken2}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/flights/book", "host": ["{{baseUrl}}"], "path": ["flights", "book"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightId\": \"{{flightIdSoldOut}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "5.8 Rechaza reserva por sobreventa (0 asientos restantes)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.8] Reservar un vuelo sin asientos disponibles responde 400/409', function () {",
+                  "    pm.expect([400, 409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/flights/book", "host": ["{{baseUrl}}"], "path": ["flights", "book"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightId\": \"{{flightIdSoldOut}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "5.9 Setup — crear vuelo con fecha pasada",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = pm.collectionVariables.get('uniqueSuffix').slice(-4);",
+                  "pm.collectionVariables.set('flightNumberPast', `PA${suffix}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.9 setup] Vuelo con fecha pasada creado (o rechazado si el equipo valida esto en creación — ambos son aceptables)', function () {",
+                  "    pm.expect([200, 201, 400]).to.include(pm.response.code);",
+                  "    if ([200, 201].includes(pm.response.code)) {",
+                  "        pm.collectionVariables.set('flightIdPast', pm.response.json().id);",
+                  "    } else {",
+                  "        pm.collectionVariables.set('flightIdPast', '');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/flights/create", "host": ["{{baseUrl}}"], "path": ["flights", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightNumber\": \"{{flightNumberPast}}\",\n  \"airline\": \"Fly Away Travel\",\n  \"departureTime\": \"2020-01-01T10:00:00\",\n  \"arrivalTime\": \"2020-01-01T14:00:00\",\n  \"availableSeats\": 10\n}"
+            }
+          }
+        },
+        {
+          "name": "5.10 Rechaza reserva de vuelo pasado",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('flightIdPast')) {",
+                  "    console.warn('flightIdPast vacío: el vuelo con fecha pasada fue rechazado en la creación. Este request se salta.');",
+                  "    postman.setNextRequest('5.11 Setup — crear dos vuelos que se solapan en horario (A)');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.10] Reservar un vuelo con fecha de salida pasada responde 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/flights/book", "host": ["{{baseUrl}}"], "path": ["flights", "book"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightId\": \"{{flightIdPast}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "5.11 Setup — crear dos vuelos que se solapan en horario (A)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = pm.collectionVariables.get('uniqueSuffix').slice(-4);",
+                  "pm.collectionVariables.set('flightNumberOverlapA', `OA${suffix}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.11 setup] Vuelo A creado', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "    pm.collectionVariables.set('flightIdOverlapA', pm.response.json().id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/flights/create", "host": ["{{baseUrl}}"], "path": ["flights", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightNumber\": \"{{flightNumberOverlapA}}\",\n  \"airline\": \"Fly Away Travel\",\n  \"departureTime\": \"2027-09-01T08:00:00\",\n  \"arrivalTime\": \"2027-09-01T12:00:00\",\n  \"availableSeats\": 20\n}"
+            }
+          }
+        },
+        {
+          "name": "5.12 Setup — crear vuelo que se solapa en horario (B)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const suffix = pm.collectionVariables.get('uniqueSuffix').slice(-4);",
+                  "pm.collectionVariables.set('flightNumberOverlapB', `OB${suffix}`);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.12 setup] Vuelo B (horario solapado con A) creado', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "    pm.collectionVariables.set('flightIdOverlapB', pm.response.json().id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/flights/create", "host": ["{{baseUrl}}"], "path": ["flights", "create"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightNumber\": \"{{flightNumberOverlapB}}\",\n  \"airline\": \"Fly Away Travel\",\n  \"departureTime\": \"2027-09-01T10:00:00\",\n  \"arrivalTime\": \"2027-09-01T15:00:00\",\n  \"availableSeats\": 20\n}"
+            }
+          }
+        },
+        {
+          "name": "5.13 Reserva el vuelo A (para luego generar conflicto con B)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.13 setup] Reserva de vuelo A OK', function () {",
+                  "    pm.expect([200, 201]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/flights/book", "host": ["{{baseUrl}}"], "path": ["flights", "book"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightId\": \"{{flightIdOverlapA}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "5.14 Rechaza reserva con conflicto de horario (mismo usuario, vuelo B)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[5.14] Reservar vuelo B (se solapa con A ya reservado por el mismo usuario) responde 400/409', function () {",
+                  "    pm.expect([400, 409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{jwtToken}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/flights/book", "host": ["{{baseUrl}}"], "path": ["flights", "book"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flightId\": \"{{flightIdOverlapB}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Email de Confirmación (verificación manual)",
+      "item": [
+        {
+          "name": "6.1 Instrucciones de verificación manual",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('[6.1] Este constraint no se puede verificar por HTTP — ver instrucciones', function () {",
+                  "    console.log('Verifica manualmente en el filesystem del proyecto (raíz o carpeta configurada) que exista un archivo:');",
+                  "    console.log('  flight_booking_email_' + pm.collectionVariables.get('bookingId') + '.txt');",
+                  "    console.log('creado al ejecutar la reserva 5.2 de este runner, y que su contenido incluya:');",
+                  "    console.log('  - Nombres del pasajero');",
+                  "    console.log('  - Número de vuelo');",
+                  "    console.log('  - Fechas en formato ISO 8601 (ej: 2027-06-01T10:00:00)');",
+                  "    pm.expect(true).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/flight/book/{{bookingId}}", "host": ["{{baseUrl}}"], "path": ["flight", "book", "{{bookingId}}"] },
+            "description": "Este request solo existe para dejar las instrucciones de verificación manual en la pestaña 'Test Results'. Revisa el archivo flight_booking_email_${booking_id}.txt generado en el filesystem de tu proyecto al correr 5.2."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -51,15 +51,31 @@ public class FlightController {
             @RequestParam(required = false) String airlineName,
             @RequestParam(required = false) String estDepartureTimeFrom,
             @RequestParam(required = false) String estDepartureTimeTo,
+            @RequestParam(required = false) String departureFrom,
+            @RequestParam(required = false) String departureTo,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to,
             HttpServletRequest request) {
 
         if (!isAuthorized(request)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
+        String fromDate = firstNonNull(estDepartureTimeFrom, departureFrom, from);
+        String toDate = firstNonNull(estDepartureTimeTo, departureTo, to);
+
         FlightSearchResponseDTO response = flightService.searchFlights(
-            flightNumber, airlineName, estDepartureTimeFrom, estDepartureTimeTo);
+            flightNumber, airlineName, fromDate, toDate);
         return ResponseEntity.ok(response);
+    }
+
+    private String firstNonNull(String... values) {
+        for (String value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     @PostMapping("/book")
@@ -73,12 +89,12 @@ public class FlightController {
             NewIdDTO response = bookingService.bookFlight(customerId, dto);
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
-            if (e.getMessage().contains("not found")) {
+            if (e.getMessage().contains("no encontrad")) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
             }
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
         } catch (RuntimeException e) {
-            if (e.getMessage().contains("not found")) {
+            if (e.getMessage().contains("no encontrad")) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
             }
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();

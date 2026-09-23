@@ -12,9 +12,10 @@ import utec.flyaway.repository.BookingRepository;
 import utec.flyaway.repository.FlightRepository;
 import utec.flyaway.repository.UserRepository;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -37,25 +38,25 @@ public class BookingService {
     @Transactional
     public NewIdDTO bookFlight(UUID customerId, FlightBookRequestDTO dto) {
         if (dto.getFlightId() == null || dto.getFlightId().isEmpty()) {
-            throw new IllegalArgumentException("flightId is required");
+            throw new IllegalArgumentException("flightId es obligatorio");
         }
 
         UUID flightId = UUID.fromString(dto.getFlightId());
         Flight flight = flightRepository.findById(flightId)
-            .orElseThrow(() -> new RuntimeException("Flight " + dto.getFlightId() + " not found"));
+            .orElseThrow(() -> new RuntimeException("Vuelo no encontrado: " + dto.getFlightId()));
 
         User customer = userRepository.findById(customerId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
+            .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
         // Check if flight is in the past
         Instant now = Instant.now();
         if (flight.getEstDepartureTime().isBefore(now) || flight.getEstArrivalTime().isBefore(now)) {
-            throw new IllegalArgumentException("Flight " + dto.getFlightId() + " is in the past");
+            throw new IllegalArgumentException("El vuelo " + dto.getFlightId() + " ya está en el pasado o en tránsito");
         }
 
         // Check available seats
         if (flight.getAvailableSeats() <= 0) {
-            throw new IllegalArgumentException("Flight " + dto.getFlightId() + " cannot be oversold");
+            throw new IllegalArgumentException("El vuelo " + dto.getFlightId() + " no tiene asientos disponibles (sobreventa)");
         }
 
         // Check overlapping flights
@@ -66,7 +67,7 @@ public class BookingService {
                 boolean overlaps = flight.getEstDepartureTime().isBefore(existingFlight.getEstArrivalTime()) &&
                                   flight.getEstArrivalTime().isAfter(existingFlight.getEstDepartureTime());
                 if (overlaps) {
-                    throw new IllegalArgumentException("overlapping flight");
+                    throw new IllegalArgumentException("Conflicto de horario: ya tienes un vuelo reservado en ese rango");
                 }
             }
         }
@@ -84,13 +85,14 @@ public class BookingService {
         flight.setAvailableSeats(flight.getAvailableSeats() - 1);
         flightRepository.save(flight);
 
+        generateConfirmationEmail(saved, flight);
 
         return new NewIdDTO(saved.getId().toString());
     }
 
     public BookingResponseDTO getBooking(UUID bookingId) {
         Booking booking = bookingRepository.findById(bookingId)
-            .orElseThrow(() -> new RuntimeException("Booking not found"));
+            .orElseThrow(() -> new RuntimeException("Reserva no encontrada"));
 
         Flight flight = booking.getFlight();
 
@@ -105,6 +107,23 @@ public class BookingService {
             flight.getEstDepartureTime().toString(),
             flight.getEstArrivalTime().toString()
         );
+    }
+
+    private void generateConfirmationEmail(Booking booking, Flight flight) {
+        String passenger = booking.getCustomerFirstName() + " " + booking.getCustomerLastName();
+        String message = "Hola " + passenger + ", ¡tu reserva fue exitosa! " +
+            "La reserva es para el vuelo " + flight.getFlightNumber() +
+            " con fecha de salida " + flight.getEstDepartureTime() +
+            " y fecha de llegada " + flight.getEstArrivalTime() +
+            ". La reserva fue registrada el " + booking.getBookingDate() +
+            ". ¡Buen viaje! Fly Away Travel";
+
+        String fileName = "flight_booking_email_" + booking.getId() + ".txt";
+        try {
+            Files.writeString(Path.of(fileName), message, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new RuntimeException("No se pudo generar el email de confirmación para la reserva " + booking.getId(), e);
+        }
     }
 
 
