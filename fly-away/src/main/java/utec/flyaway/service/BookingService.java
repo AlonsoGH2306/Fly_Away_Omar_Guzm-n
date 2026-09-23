@@ -4,7 +4,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import utec.flyaway.dto.BookingResponseDTO;
 import utec.flyaway.dto.FlightBookRequestDTO;
-import utec.flyaway.dto.NewIdDTO;
 import utec.flyaway.entity.Booking;
 import utec.flyaway.entity.Flight;
 import utec.flyaway.entity.User;
@@ -36,7 +35,7 @@ public class BookingService {
     }
 
     @Transactional
-    public NewIdDTO bookFlight(UUID customerId, FlightBookRequestDTO dto) {
+    public BookingResponseDTO bookFlight(UUID customerId, FlightBookRequestDTO dto) {
         if (dto.getFlightId() == null || dto.getFlightId().isEmpty()) {
             throw new IllegalArgumentException("flightId es obligatorio");
         }
@@ -87,7 +86,17 @@ public class BookingService {
 
         generateConfirmationEmail(saved, flight);
 
-        return new NewIdDTO(saved.getId().toString());
+        return new BookingResponseDTO(
+            saved.getId().toString(),
+            saved.getBookingDate().toString(),
+            flight.getId().toString(),
+            flight.getFlightNumber(),
+            customer.getId().toString(),
+            customer.getFirstName(),
+            customer.getLastName(),
+            flight.getEstDepartureTime().toString(),
+            flight.getEstArrivalTime().toString()
+        );
     }
 
     public BookingResponseDTO getBooking(UUID bookingId) {

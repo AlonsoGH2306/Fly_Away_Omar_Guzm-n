@@ -49,6 +49,7 @@ public class FlightController {
     public ResponseEntity<FlightSearchResponseDTO> search(
             @RequestParam(required = false) String flightNumber,
             @RequestParam(required = false) String airlineName,
+            @RequestParam(required = false) String airline,
             @RequestParam(required = false) String estDepartureTimeFrom,
             @RequestParam(required = false) String estDepartureTimeTo,
             @RequestParam(required = false) String departureFrom,
@@ -63,9 +64,10 @@ public class FlightController {
 
         String fromDate = firstNonNull(estDepartureTimeFrom, departureFrom, from);
         String toDate = firstNonNull(estDepartureTimeTo, departureTo, to);
+        String airlineValue = firstNonNull(airlineName, airline);
 
         FlightSearchResponseDTO response = flightService.searchFlights(
-            flightNumber, airlineName, fromDate, toDate);
+            flightNumber, airlineValue, fromDate, toDate);
         return ResponseEntity.ok(response);
     }
 
@@ -79,14 +81,14 @@ public class FlightController {
     }
 
     @PostMapping("/book")
-    public ResponseEntity<NewIdDTO> book(@RequestBody FlightBookRequestDTO dto, HttpServletRequest request) {
+    public ResponseEntity<BookingResponseDTO> book(@RequestBody FlightBookRequestDTO dto, HttpServletRequest request) {
         if (!isAuthorized(request)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
         try {
             UUID customerId = getUserIdFromToken(request);
-            NewIdDTO response = bookingService.bookFlight(customerId, dto);
+            BookingResponseDTO response = bookingService.bookFlight(customerId, dto);
             return ResponseEntity.ok(response);
         } catch (IllegalArgumentException e) {
             if (e.getMessage().contains("no encontrad")) {

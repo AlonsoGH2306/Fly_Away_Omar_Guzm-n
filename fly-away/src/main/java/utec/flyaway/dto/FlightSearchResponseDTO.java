@@ -10,7 +10,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class FlightSearchResponseDTO {
-    private List<FlightDTO> items;
+    private List<FlightDTO> content;
 
     @Data
     @NoArgsConstructor

@@ -8,6 +8,7 @@ import utec.flyaway.repository.FlightRepository;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -26,13 +27,15 @@ public class FlightService {
 
     @Transactional
     public NewIdDTO createFlight(NewFlightRequestDTO dto) {
-        validateFlight(dto);
+        Instant departure = parseDate(dto.getEstDepartureTime());
+        Instant arrival = parseDate(dto.getEstArrivalTime());
+        validateFlight(dto, departure, arrival);
 
         Flight flight = new Flight();
         flight.setAirlineName(dto.getAirlineName());
         flight.setFlightNumber(dto.getFlightNumber());
-        flight.setEstDepartureTime(dto.getEstDepartureTime());
-        flight.setEstArrivalTime(dto.getEstArrivalTime());
+        flight.setEstDepartureTime(departure);
+        flight.setEstArrivalTime(arrival);
         flight.setAvailableSeats(dto.getAvailableSeats());
 
         Flight saved = flightRepository.save(flight);
@@ -132,18 +135,22 @@ public class FlightService {
             try {
                 return OffsetDateTime.parse(trimmed).toInstant();
             } catch (Exception e2) {
+try {
+                return LocalDate.parse(trimmed).atStartOfDay(ZoneOffset.UTC).toInstant();
+            } catch (Exception e3) {
                 try {
-                    return LocalDate.parse(trimmed).atStartOfDay(ZoneOffset.UTC).toInstant();
-                } catch (Exception e3) {
+                    return LocalDateTime.parse(trimmed).atZone(ZoneOffset.UTC).toInstant();
+                } catch (Exception e4) {
                     throw new IllegalArgumentException("Fecha de salida inválida: " + value);
                 }
+            }
             }
         }
     }
 
-    private void validateFlight(NewFlightRequestDTO dto) {
+    private void validateFlight(NewFlightRequestDTO dto, Instant departure, Instant arrival) {
         if (dto.getAirlineName() == null || dto.getFlightNumber() == null || 
-            dto.getEstDepartureTime() == null || dto.getEstArrivalTime() == null || 
+            departure == null || arrival == null || 
             dto.getAvailableSeats() == null) {
             throw new IllegalArgumentException("Todos los campos son obligatorios");
         }
@@ -156,8 +163,7 @@ public class FlightService {
             throw new IllegalArgumentException("Los asientos disponibles deben ser mayores a 0");
         }
 
-        if (dto.getEstDepartureTime().isAfter(dto.getEstArrivalTime()) || 
-            dto.getEstDepartureTime().equals(dto.getEstArrivalTime())) {
+        if (departure.isAfter(arrival) || departure.equals(arrival)) {
             throw new IllegalArgumentException("La hora de salida debe ser anterior a la hora de llegada");
         }
 
